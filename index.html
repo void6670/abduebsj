@@ -73,6 +73,7 @@
     <div id="tools" role="toolbar" aria-label="Map tools">
       <button data-tool="pick" title="Click the map to add a place"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>Pick place</button>
       <button data-tool="area" title="Drag a square on the map to select an area"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3 2.5"/></svg>Select area</button>
+      <button id="walkBtn" class="walk" title="Build a 3D model of the selected area and walk around in it"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="13" cy="4" r="2"/><path d="M10 21l2-6 3 3v3M9 12l2-4 3 1 2 3M11 8l-2 7"/></svg>Walk in 3D</button>
     </div>
     <div id="selbox" hidden><span></span></div>
     <div id="drop" hidden>Drop a places file</div>
@@ -82,5 +83,12 @@
   <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
   <script src="parse.js"></script>
   <script src="app.js"></script>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+  <script type="module" src="walk.js"></script>
 </body>
 </html>

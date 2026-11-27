@@ -241,6 +241,7 @@
     'fac-sand':     { wall: [214, 176, 128], win: [52, 60, 70],  frame: [240, 226, 200], noise: 18 },
     'fac-glass':    { glass: true },
   };
+  const ROOFS = { 'fac-brick': '#8e4b3b', 'fac-stone': '#77706a', 'fac-plaster': '#a59c8e', 'fac-concrete': '#6a6d70', 'fac-sand': '#9a7e62', 'fac-glass': '#59646d' };
   const facadeCache = {};
   function facadeImage(name) {
     if (facadeCache[name]) return facadeCache[name];
@@ -276,7 +277,7 @@
       g.fillStyle = rgb(f.frame); g.fillRect(15, 7, 2, 16);            // mullion
     }
     const d = g.getImageData(0, 0, N, N);
-    facadeCache[name] = { width: N, height: N, data: new Uint8Array(d.data.buffer) };
+    facadeCache[name] = { width: N, height: N, data: new Uint8Array(d.data.buffer), canvas: c };
     return facadeCache[name];
   }
 
@@ -306,8 +307,8 @@
     map.addLayer({
       id: 'p3d-broofs', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14, filter,
       paint: {
-        'fill-extrusion-color': ['case', TALL, '#59646d',
-          ['match', MAT, 0, '#8e4b3b', 1, '#77706a', 2, '#a59c8e', 3, '#6a6d70', '#9a7e62']],
+        'fill-extrusion-color': ['case', TALL, ROOFS['fac-glass'],
+          ['match', MAT, 0, ROOFS['fac-brick'], 1, ROOFS['fac-stone'], 2, ROOFS['fac-plaster'], 3, ROOFS['fac-concrete'], ROOFS['fac-sand']]],
         'fill-extrusion-height': ['+', H, 0.8],
         'fill-extrusion-base': H,
         'fill-extrusion-opacity': 1,
@@ -727,6 +728,41 @@
     return p;
   }
 
+  // ---- walk in 3D
+  const WALK_MAX = 3000; // metres: bigger areas get too heavy to build in a browser
+  function walkTarget() {
+    const p = state.places.find((x) => x.id === state.selected);
+    if (p && p.bbox) return { bbox: p.bbox.slice(), name: label(p), center: { lat: p.lat, lng: p.lng } };
+    if (!p && map.getZoom() < 12) return null;
+    const c = p ? { lat: p.lat, lng: p.lng } : map.getCenter();
+    return { bbox: squareAround(c, 350), name: p ? label(p) : 'Map view', center: c };
+  }
+  function squareAround(c, half) {
+    const dLat = half / 110574, dLng = half / (111320 * Math.cos(c.lat * Math.PI / 180));
+    return [c.lng - dLng, c.lat - dLat, c.lng + dLng, c.lat + dLat];
+  }
+  function openWalk() {
+    if (!window.Walk3D) { status('The 3D walker is still loading. Try again in a moment.', 'error'); return; }
+    const t = walkTarget();
+    if (!t) { status('Zoom in on the map, select a place, or select an area first. That is what gets turned into a 3D model.', 'error'); return; }
+    const a = areaMeters(t.bbox);
+    if (a.w > WALK_MAX || a.h > WALK_MAX) {
+      const [w, s, e, n] = t.bbox;
+      const half = WALK_MAX / 2;
+      const c = { lng: (w + e) / 2, lat: (s + n) / 2 };
+      const sq = squareAround(c, half);
+      t.bbox = [Math.max(w, sq[0]), Math.max(s, sq[1]), Math.min(e, sq[2]), Math.min(n, sq[3])];
+      status(`That area is big, so the 3D model uses the middle ${fmtLen(WALK_MAX)} × ${fmtLen(WALK_MAX)}.`, '');
+    }
+    if (state.tool) setTool(null);
+    window.Walk3D.open({
+      bbox: t.bbox,
+      name: t.name,
+      facadeCanvas: (name) => facadeImage(name).canvas,
+      facades: ROOFS,
+    });
+  }
+
   function setTool(tool) {
     if (state.tool === tool) tool = null;
     if (tool === 'area' && state.mode === 'photo') {
@@ -912,7 +948,8 @@
   $('#exampleBtn').addEventListener('click', () => { $('#input').value = EXAMPLES; $('#addBtn').click(); });
   $('#fileInput').addEventListener('change', (e) => { importFiles([...e.target.files]); e.target.value = ''; });
 
-  document.querySelectorAll('#tools button').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
+  document.querySelectorAll('#tools button[data-tool]').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
+  $('#walkBtn').addEventListener('click', openWalk);
   $('#tourBtn').addEventListener('click', tour);
   $('#clearBtn').addEventListener('click', () => {
     if (state.places.length && !confirm('Remove all places?')) return;
@@ -982,5 +1019,5 @@
   }
 
   // exposed for debugging / automation
-  window.places3d = { state, map, addText: (t) => addSpecs(P.parseText(t)), select, fitAll, setMode, setTool, addArea, pickAt };
+  window.places3d = { state, map, openWalk, addText: (t) => addSpecs(P.parseText(t)), select, fitAll, setMode, setTool, addArea, pickAt };
 })();

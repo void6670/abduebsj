@@ -105,3 +105,29 @@ body.tool-area .maplibregl-canvas-container.maplibregl-interactive { cursor: cro
   #tools { left: auto; right: 54px; transform: none; }
   #tools button { padding: 8px; font-size: 13px; }
 }
+
+/* walk in 3D */
+#tools button.walk { background: #2b7a4b; color: #fff; }
+#tools button.walk:hover { background: #33925a; }
+#walk { position: fixed; inset: 0; z-index: 50; background: #9fc8ef; }
+#walk .w-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+#walk .w-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; padding: 10px 12px; background: linear-gradient(rgba(10,12,16,.75), rgba(10,12,16,0)); z-index: 2; pointer-events: none; }
+#walk .w-top > * { pointer-events: auto; }
+#walk .w-title { color: #fff; font-size: 15px; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+#walk .w-title span { color: #dbe6f5; }
+#walk .w-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+#walk .w-btns button { min-height: 40px; }
+#walk .w-btns button.on { background: var(--accent); border-color: var(--accent); }
+#w-load { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; color: #fff;
+  background: radial-gradient(circle at 50% 40%, #2a3a52, #11151c); font-size: 15px; z-index: 1; text-align: center; padding: 20px; }
+.w-spin { width: 38px; height: 38px; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); border-top-color: #fff; animation: wspin 0.9s linear infinite; }
+@keyframes wspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .w-spin { animation: none; } }
+#w-help { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 2; max-width: min(720px, calc(100% - 24px));
+  background: rgba(10,12,16,.82); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; text-align: center; pointer-events: none; }
+#w-joy { position: absolute; left: 24px; bottom: 28px; width: 120px; height: 120px; border-radius: 50%; z-index: 2;
+  background: rgba(10,12,16,.35); border: 2px solid rgba(255,255,255,.5); touch-action: none; display: grid; place-items: center; }
+#w-joy div { width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,.8); }
+#w-jump { position: absolute; right: 24px; bottom: 40px; z-index: 2; width: 72px; height: 72px; border-radius: 50%; }
+body.walking #panel, body.walking #stage { visibility: hidden; }

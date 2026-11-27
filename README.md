@@ -55,6 +55,13 @@ Google bills Map Tiles API usage beyond its free tier.
 
 ## Other features
 
+- **Walk in 3D**: builds a real 3D model of the selected area, or a 700 m square around the selected place or the map centre (up to 3 km). The model combines terrain from elevation data, the satellite photo as ground texture, and every building with its real footprint and height, textured walls and coloured roofs. You then walk around in it first-person:
+  - **W A S D** or arrows to move, mouse to look, **Shift** to run, **Space** to jump
+  - **F** to fly (Space up, C down)
+  - on phones, a joystick and drag-to-look
+
+  You can't walk through walls, and you can land on roofs.
+- **Download 3D file (.glb)**: saves the same model as a standard glTF binary, in metres with Y up and centred on the area, with the satellite and facade textures embedded. It opens in Windows 3D Viewer, Blender, Unity, Unreal, Godot, Sketchfab and other 3D tools, and passes the Khronos glTF validator.
 - **Pick place**: click anywhere on the map, or on the photorealistic 3D surface, to drop a pin. Its name is looked up automatically.
 - **Select area**: drag a box on the map (hold Shift for an exact square). The 3D view frames that square with a glowing wall around it and dims everything outside. Areas show in the list with their size and are kept in share links.
 - **Tour** flies to each place in turn and orbits it.
@@ -71,4 +78,5 @@ node --test test/*.test.js   # parser tests
 
 - `parse.js`: turns links, text and files into place specs. It has no dependencies and runs in the browser and in Node.
 - `app.js`: UI, geocoding, MapLibre and Cesium rendering.
+- `walk.js`: builds the 3D model with three.js from elevation, imagery and vector tiles, runs the first-person viewer and exports .glb.
 - `index.html`, `style.css`: layout.
