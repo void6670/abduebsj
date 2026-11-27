@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Places → 3D: turn Google Maps places into a 3D map</title>
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -43,8 +43,8 @@
 
       <div id="freeOpts">
         <div class="seg" id="styleSeg">
-          <button data-style="streets" class="on">Streets</button>
-          <button data-style="satellite">Satellite</button>
+          <button data-style="realistic" class="on">Realistic</button>
+          <button data-style="streets">Map</button>
         </div>
         <label class="check"><input type="checkbox" id="buildings" checked> 3D buildings</label>
         <label class="check"><input type="checkbox" id="terrain" checked> 3D terrain</label>
@@ -79,7 +79,7 @@
     <button id="panelToggle" aria-label="Toggle panel">☰</button>
   </main>
 
-  <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
   <script src="parse.js"></script>
   <script src="app.js"></script>
 </body>

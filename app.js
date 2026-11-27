@@ -15,7 +15,7 @@
     places: [],
     selected: null,
     mode: 'free',     // 'free' | 'photo'
-    style: 'streets', // 'streets' | 'satellite'
+    style: 'realistic', // 'realistic' | 'streets'
     buildings: true,
     terrain: true,
     exag: 1.5,
@@ -181,10 +181,18 @@
   const DEM_TILES = ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'];
   const DEM_ATTR = 'Terrain: <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank">Mapzen / AWS Terrain Tiles</a>';
 
-  function satelliteStyle() {
+  const OFM_GLYPHS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
+  const OFM_SPRITE = 'https://tiles.openfreemap.org/sprites/ofm_f384/ofm';
+  const STREETS_URL = 'https://tiles.openfreemap.org/styles/liberty';
+  // The street style is also the source of label layers for the realistic view.
+  const libertyP = fetch(STREETS_URL).then((r) => r.json()).catch(() => null);
+
+  // Realistic: satellite imagery draped on 3D terrain, with labels and textured buildings added on style load.
+  function realisticStyle() {
     return {
       version: 8,
-      glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+      glyphs: OFM_GLYPHS,
+      sprite: OFM_SPRITE,
       sources: {
         sat: {
           type: 'raster', tileSize: 256, maxzoom: 19,
@@ -194,16 +202,22 @@
         openmaptiles: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' },
       },
       layers: [
-        { id: 'background', type: 'background', paint: { 'background-color': '#0b0d12' } },
-        { id: 'sat', type: 'raster', source: 'sat' },
+        { id: 'background', type: 'background', paint: { 'background-color': '#1b2a1f' } },
+        { id: 'sat', type: 'raster', source: 'sat', paint: { 'raster-saturation': 0.12, 'raster-contrast': 0.08 } },
+        { id: 'p3d-roads', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation', minzoom: 11,
+          filter: ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'], true, false],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': ['match', ['get', 'class'], ['motorway', 'trunk'], 'rgba(255,214,120,0.7)', 'rgba(255,248,225,0.45)'],
+            'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 11, 0.6, 15, 2.2, 18, 6],
+          } },
       ],
     };
   }
-  const STREETS_URL = 'https://tiles.openfreemap.org/styles/liberty';
 
   const map = new maplibregl.Map({
     container: 'map',
-    style: STREETS_URL,
+    style: realisticStyle(),
     center: [10, 30],
     zoom: 1.6,
     pitch: 0,
@@ -212,36 +226,123 @@
     canvasContextAttributes: { antialias: true },
   });
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-  map.addControl(new maplibregl.ScaleControl(), 'bottom-left');
 
   function firstSymbolLayer() {
     const l = map.getStyle().layers.find((x) => x.type === 'symbol');
     return l && l.id;
   }
 
+  // ---- procedural facade textures (walls with windows), generated once on a canvas
+  const FACADES = {
+    'fac-brick':    { wall: [150, 78, 58],   win: [42, 52, 62],  frame: [225, 214, 196], noise: 26, mortar: true },
+    'fac-stone':    { wall: [201, 186, 158], win: [48, 58, 70],  frame: [236, 228, 210], noise: 16 },
+    'fac-plaster':  { wall: [226, 220, 205], win: [56, 70, 84],  frame: [250, 248, 240], noise: 10 },
+    'fac-concrete': { wall: [150, 152, 150], win: [38, 48, 58],  frame: [120, 122, 122], noise: 14 },
+    'fac-sand':     { wall: [214, 176, 128], win: [52, 60, 70],  frame: [240, 226, 200], noise: 18 },
+    'fac-glass':    { glass: true },
+  };
+  const facadeCache = {};
+  function facadeImage(name) {
+    if (facadeCache[name]) return facadeCache[name];
+    const f = FACADES[name];
+    const N = 32;
+    const c = document.createElement('canvas');
+    c.width = c.height = N;
+    const g = c.getContext('2d');
+    let seed = name.length * 977;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const rgb = (a, d = 0) => `rgb(${a.map((v) => clamp(Math.round(v + d), 0, 255)).join(',')})`;
+    if (f.glass) {
+      const grad = g.createLinearGradient(0, 0, N, N);
+      grad.addColorStop(0, '#7fa6bd'); grad.addColorStop(0.5, '#4b6f86'); grad.addColorStop(1, '#2f4b5e');
+      g.fillStyle = grad; g.fillRect(0, 0, N, N);
+      g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(0, 0, N, 5);
+      g.fillStyle = '#26343f';
+      for (let i = 0; i < N; i += 8) { g.fillRect(i, 0, 1, N); g.fillRect(0, i, N, 2); }
+    } else {
+      g.fillStyle = rgb(f.wall); g.fillRect(0, 0, N, N);
+      for (let i = 0; i < 260; i++) {            // surface grain
+        g.fillStyle = rgb(f.wall, (rnd() - 0.5) * f.noise * 2);
+        g.fillRect(Math.floor(rnd() * N), Math.floor(rnd() * N), 1, 1);
+      }
+      if (f.mortar) {
+        g.fillStyle = 'rgba(230,215,200,0.35)';
+        for (let y = 2; y < N; y += 4) g.fillRect(0, y, N, 1);
+      }
+      g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(0, 29, N, 2);      // floor ledge shadow
+      g.fillStyle = rgb(f.frame); g.fillRect(8, 6, 16, 18);            // window frame
+      g.fillStyle = rgb(f.win); g.fillRect(9, 7, 14, 16);              // glass
+      g.fillStyle = 'rgba(255,255,255,0.22)'; g.fillRect(9, 7, 14, 5); // sky reflection
+      g.fillStyle = rgb(f.frame); g.fillRect(15, 7, 2, 16);            // mullion
+    }
+    const d = g.getImageData(0, 0, N, N);
+    facadeCache[name] = { width: N, height: N, data: new Uint8Array(d.data.buffer) };
+    return facadeCache[name];
+  }
+
+  const H = ['coalesce', ['get', 'render_height'], 8];
+  // Pseudo-random but stable material per building, from its height and id.
+  // OpenFreeMap building ids are multiples of 10, so divide first or every building lands on the same material.
+  const MAT = ['%', ['+', ['floor', ['/', ['to-number', ['coalesce', ['id'], 0]], 10]], ['floor', H]], 5];
+  const TALL = ['>=', H, 45];
+
+  function addBuildings() {
+    if (map.getLayer('building-3d')) map.removeLayer('building-3d');   // Liberty's plain grey blocks
+    if (map.getLayer('p3d-bwalls')) return;
+    for (const name of Object.keys(FACADES)) if (!map.hasImage(name)) map.addImage(name, facadeImage(name), { pixelRatio: 4 });
+    const filter = ['!', ['has', 'hide_3d']];
+    const before = firstSymbolLayer();
+    map.addLayer({
+      id: 'p3d-bwalls', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14, filter,
+      paint: {
+        'fill-extrusion-pattern': ['case', TALL, 'fac-glass',
+          ['match', MAT, 0, 'fac-brick', 1, 'fac-stone', 2, 'fac-plaster', 3, 'fac-concrete', 'fac-sand']],
+        'fill-extrusion-height': H,
+        'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+        'fill-extrusion-opacity': 1,
+      },
+    }, before);
+    // A thin coloured cap on top so roofs look like roofs, not more windows.
+    map.addLayer({
+      id: 'p3d-broofs', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14, filter,
+      paint: {
+        'fill-extrusion-color': ['case', TALL, '#59646d',
+          ['match', MAT, 0, '#8e4b3b', 1, '#77706a', 2, '#a59c8e', 3, '#6a6d70', '#9a7e62']],
+        'fill-extrusion-height': ['+', H, 0.8],
+        'fill-extrusion-base': H,
+        'fill-extrusion-opacity': 1,
+      },
+    }, before);
+  }
+
+  async function addLabels() {
+    const lib = await libertyP;
+    if (!lib || state.style !== 'realistic' || !map.getSource('openmaptiles')) return;
+    for (const l of lib.layers) {
+      if (l.type !== 'symbol' || l.source !== 'openmaptiles' || /one_way|shield/.test(l.id) || map.getLayer(l.id)) continue;
+      const layer = JSON.parse(JSON.stringify(l));
+      if (layer.layout && layer.layout['text-field'] && !/shield/.test(l.id)) {
+        // White text with a dark halo reads well on top of imagery.
+        layer.paint = Object.assign({}, layer.paint, { 'text-color': '#ffffff', 'text-halo-color': 'rgba(0,0,0,0.8)', 'text-halo-width': 1.4 });
+      }
+      try { map.addLayer(layer); } catch (e) { /* skip layers this style can't host */ }
+    }
+  }
+
   function decorateStyle() {
     // Terrain (separate sources for 3D mesh and hillshade, as MapLibre recommends)
     if (!map.getSource('dem')) map.addSource('dem', { type: 'raster-dem', tiles: DEM_TILES, encoding: 'terrarium', tileSize: 256, maxzoom: 15, attribution: DEM_ATTR });
     if (!map.getSource('dem-hs')) map.addSource('dem-hs', { type: 'raster-dem', tiles: DEM_TILES, encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
-    if (state.style === 'streets' && !map.getLayer('p3d-hillshade')) {
+    if (!map.getLayer('p3d-hillshade')) {
+      const realistic = state.style === 'realistic';
       map.addLayer({ id: 'p3d-hillshade', type: 'hillshade', source: 'dem-hs',
-        paint: { 'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': '#5a5146' } }, firstSymbolLayer());
+        paint: realistic
+          ? { 'hillshade-exaggeration': 0.28, 'hillshade-shadow-color': '#0d1410', 'hillshade-highlight-color': '#fff6e0', 'hillshade-accent-color': '#1d2a20' }
+          : { 'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': '#5a5146' },
+      }, realistic ? 'p3d-roads' : firstSymbolLayer());
     }
-
-    // 3D buildings: Liberty already ships "building-3d"; satellite gets our own extrusion layer.
-    if (!map.getLayer('building-3d') && !map.getLayer('p3d-buildings')) {
-      map.addLayer({
-        id: 'p3d-buildings', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 13,
-        paint: {
-          'fill-extrusion-color': '#ece7de',
-          'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 13, 0, 14.5, ['coalesce', ['get', 'render_height'], 8]],
-          'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-          'fill-extrusion-opacity': 0.82,
-        },
-      });
-    }
-    if (map.getLayer('building-3d')) map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.9);
-
+    addBuildings();
+    map.setLight({ anchor: 'map', position: [1.5, 210, 35], color: '#fff8ec', intensity: 0.45 });
     map.setSky({
       'sky-color': '#7fb2ec', 'horizon-color': '#dfe9f5', 'fog-color': '#e6edf5',
       'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.6, 'fog-ground-blend': 0.4,
@@ -250,11 +351,12 @@
     addAreaLayers();
     applyBuildings();
     applyTerrain();
+    if (state.style === 'realistic') addLabels();
   }
 
   function applyBuildings() {
-    for (const l of map.getStyle().layers) {
-      if (l.type === 'fill-extrusion') map.setLayoutProperty(l.id, 'visibility', state.buildings ? 'visible' : 'none');
+    for (const id of ['p3d-bwalls', 'p3d-broofs']) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', state.buildings ? 'visible' : 'none');
     }
   }
   function applyTerrain() {
@@ -264,7 +366,7 @@
 
   function setStyle(style) {
     state.style = style;
-    map.setStyle(style === 'satellite' ? satelliteStyle() : STREETS_URL, { diff: false });
+    map.setStyle(style === 'realistic' ? realisticStyle() : STREETS_URL, { diff: false });
   }
   map.on('style.load', decorateStyle);
   map.on('error', (e) => console.warn('map error', e && e.error));
