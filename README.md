@@ -15,7 +15,7 @@ Any static host works too.
 
 ### GitHub Pages
 
-`.github/workflows/pages.yml` tests and publishes the site on every push. To turn it on once: **Settings → Pages → Build and deployment → Source: GitHub Actions**, then re-run the workflow from the **Actions** tab. The site is served at `https://<owner>.github.io/<repo>/`.
+The site is published from the `gh-pages` branch, which holds `index.html`, `style.css`, `parse.js`, `app.js` and an empty `.nojekyll` file. To update it, copy the changed files onto that branch and push. It is served at `https://<owner>.github.io/<repo>/`.
 
 ## What it understands
 
