@@ -226,7 +226,6 @@
     canvasContextAttributes: { antialias: true },
   });
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-  map.addControl(new maplibregl.ScaleControl(), 'bottom-left');
 
   function firstSymbolLayer() {
     const l = map.getStyle().layers.find((x) => x.type === 'symbol');
@@ -283,7 +282,8 @@
 
   const H = ['coalesce', ['get', 'render_height'], 8];
   // Pseudo-random but stable material per building, from its height and id.
-  const MAT = ['%', ['+', ['floor', ['*', H, 3.7]], ['to-number', ['coalesce', ['id'], 0]]], 5];
+  // OpenFreeMap building ids are multiples of 10, so divide first or every building lands on the same material.
+  const MAT = ['%', ['+', ['floor', ['/', ['to-number', ['coalesce', ['id'], 0]], 10]], ['floor', H]], 5];
   const TALL = ['>=', H, 45];
 
   function addBuildings() {
