@@ -54,6 +54,8 @@ Google bills Map Tiles API usage beyond its free tier.
 
 ## Other features
 
+- **Pick place**: click anywhere on the map, or on the photorealistic 3D surface, to drop a pin. Its name is looked up automatically.
+- **Select area**: drag a box on the map (hold Shift for an exact square). The 3D view frames that square with a glowing wall around it and dims everything outside. Areas show in the list with their size and are kept in share links.
 - **Tour** flies to each place in turn and orbits it.
 - **Orbit** rotates slowly around the selected place.
 - **Copy share link** encodes all places in the URL hash, so you can send someone the same 3D map.

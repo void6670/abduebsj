@@ -20,6 +20,7 @@
     terrain: true,
     exag: 1.5,
     orbit: false,
+    tool: null,       // null | 'pick' | 'area'
   };
   let nextId = 1;
 
@@ -86,7 +87,7 @@
           problems.push(`Geocoding failed for “${s.query}” (${e.message})`); continue;
         }
       }
-      const p = { id: nextId++, name: name || null, address: s.address || null, lat, lng, camera: s.camera || {} };
+      const p = { id: nextId++, name: name || null, address: s.address || null, lat, lng, camera: s.camera || {}, bbox: s.bbox || null };
       state.places.push(p);
       added.push(p);
     }
@@ -110,6 +111,8 @@
     state.selected = id;
     renderList();
     updateMarkerSelection();
+    updateAreas();
+    if (viewer) syncEntities();
     const p = state.places.find((x) => x.id === id);
     if (p && fly) flyTo(p);
   }
@@ -120,7 +123,8 @@
     state.places.forEach((p, i) => {
       const li = document.createElement('li');
       li.className = p.id === state.selected ? 'sel' : '';
-      li.innerHTML = `<span class="num">${i + 1}</span><span class="txt"><div class="name"></div><div class="coord">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</div></span><button class="del" title="Remove">✕</button>`;
+      const sub = p.bbox ? `Area · ${areaSize(p.bbox)}` : `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
+      li.innerHTML = `<span class="num${p.bbox ? ' area' : ''}">${i + 1}</span><span class="txt"><div class="name"></div><div class="coord">${sub}</div></span><button class="del" title="Remove">✕</button>`;
       li.querySelector('.name').textContent = label(p);
       li.title = p.address || label(p);
       li.addEventListener('click', () => select(p.id));
@@ -135,14 +139,17 @@
     return state.places.map((p) => {
       const c = p.camera || {};
       const cam = ['zoom', 'range', 'heading', 'tilt'].map((k) => (c[k] == null ? null : c[k]));
-      return [p.name || '', +p.lat.toFixed(6), +p.lng.toFixed(6)].concat(cam.some((v) => v != null) ? [cam] : []);
+      const row = [p.name || '', +p.lat.toFixed(6), +p.lng.toFixed(6), cam.some((v) => v != null) ? cam : null];
+      if (p.bbox) row.push(p.bbox.map((v) => +v.toFixed(6)));
+      else if (!row[3]) row.pop();
+      return row;
     });
   }
   function expand(arr) {
-    return arr.map(([name, lat, lng, cam]) => {
+    return arr.map(([name, lat, lng, cam, bbox]) => {
       const camera = {};
       if (cam) ['zoom', 'range', 'heading', 'tilt'].forEach((k, i) => { if (cam[i] != null) camera[k] = cam[i]; });
-      return { name: name || null, lat, lng, camera };
+      return { name: name || null, lat, lng, camera, bbox: Array.isArray(bbox) && bbox.length === 4 ? bbox : null };
     }).filter((s) => P.isValid(s.lat, s.lng));
   }
   function save() {
@@ -240,6 +247,7 @@
       'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.6, 'fog-ground-blend': 0.4,
       'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 10, 1, 12, 0],
     });
+    addAreaLayers();
     applyBuildings();
     applyTerrain();
   }
@@ -279,6 +287,7 @@
       markers.set(p.id, m);
     });
     updateMarkerSelection();
+    updateAreas();
     if (viewer) syncEntities();
   }
   function updateMarkerSelection() {
@@ -291,6 +300,13 @@
   }
 
   function freeFly(p) {
+    if (p.bbox) {
+      const [w, s, e, n] = p.bbox;
+      const pad = Math.round(Math.min(map.getContainer().clientWidth, map.getContainer().clientHeight) * 0.12);
+      const cam = map.cameraForBounds([[w, s], [e, n]], { padding: pad, bearing: map.getBearing() + 25, pitch: 58 });
+      map.flyTo(Object.assign({}, cam || { center: [p.lng, p.lat], zoom: 15 }, { pitch: 58, bearing: map.getBearing() + 25, duration: 3000, essential: true }));
+      return new Promise((r) => map.once('moveend', r));
+    }
     const c = p.camera || {};
     let zoom = 16.6;
     if (c.range) zoom = zoomForRange(c.range * 1.4, p.lat);
@@ -360,6 +376,14 @@
         if (!warned) { warned = true; status('Some 3D tiles failed to load. Check that the Map Tiles API is enabled for your key.', 'error'); }
       });
       viewer.screenSpaceEventHandler.setInputAction((ev) => {
+        if (state.tool === 'pick') {
+          const pos = viewer.scene.pickPosition(ev.position);
+          if (pos) {
+            const carto = C.Cartographic.fromCartesian(pos);
+            pickAt(C.Math.toDegrees(carto.latitude), C.Math.toDegrees(carto.longitude), carto.height);
+          } else status('Nothing to pick there. Click on the 3D surface.', 'error');
+          return;
+        }
         const picked = viewer.scene.pick(ev.position);
         const id = picked && picked.id && picked.id.placeId;
         if (id) select(id);
@@ -406,6 +430,17 @@
         },
       });
       e.placeId = p.id;
+      if (p.bbox) {
+        const rect = C.Rectangle.fromDegrees(p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3]);
+        const ring = [[0, 1], [2, 1], [2, 3], [0, 3], [0, 1]].flatMap(([a, b]) => [p.bbox[a], p.bbox[b]]);
+        viewer.entities.add({
+          rectangle: { coordinates: rect, material: C.Color.fromCssColorString(sel ? '#4f8cff' : '#ffd166').withAlpha(sel ? 0.18 : 0.12), classificationType: C.ClassificationType.BOTH },
+        });
+        viewer.entities.add({
+          polyline: { positions: C.Cartesian3.fromDegreesArray(ring), width: 3, clampToGround: true, classificationType: C.ClassificationType.BOTH,
+            material: C.Color.fromCssColorString(sel ? '#4f8cff' : '#ffd166') },
+        });
+      }
     });
   }
 
@@ -432,8 +467,9 @@
     // Open-Meteo gives height above sea level, while the 3D tiles use ellipsoid height.
     // That is close enough for the first flight; the real surface height is sampled afterwards.
     const h = p.ground != null ? p.ground : await elevation(p);
-    const tilt = c.tilt != null ? clamp(c.tilt, 0, 80) : 50;
-    const hpr = new C.HeadingPitchRange(C.Math.toRadians(c.heading || 0), C.Math.toRadians(tilt - 90), photoRange(p));
+    const tilt = p.bbox ? 45 : c.tilt != null ? clamp(c.tilt, 0, 80) : 50;
+    const range = p.bbox ? clamp(areaMeters(p.bbox).diag * 1.15, 200, 200000) : photoRange(p);
+    const hpr = new C.HeadingPitchRange(p.bbox ? viewer.camera.heading : C.Math.toRadians(c.heading || 0), C.Math.toRadians(tilt - 90), range);
     const fly = (height, duration) => new Promise((resolve) => {
       viewer.camera.flyToBoundingSphere(new C.BoundingSphere(C.Cartesian3.fromDegrees(p.lng, p.lat, height), 40), {
         offset: hpr, duration, complete: resolve, cancel: resolve,
@@ -497,6 +533,172 @@
   window.addEventListener('pointerup', () => { userInteracting = false; });
   requestAnimationFrame(freeOrbitLoop);
 
+  // ======================================================= areas & tools
+  function areaMeters([w, s, e, n]) {
+    const lat = (s + n) / 2;
+    const wM = (e - w) * 111320 * Math.cos(lat * Math.PI / 180);
+    const hM = (n - s) * 110574;
+    return { w: wM, h: hM, diag: Math.hypot(wM, hM) };
+  }
+  function fmtLen(m) { return m >= 1000 ? (m / 1000).toFixed(m >= 10000 ? 0 : 1) + ' km' : Math.round(m) + ' m'; }
+  function areaSize(b) { const a = areaMeters(b); return `${fmtLen(a.w)} × ${fmtLen(a.h)}`; }
+  function ringOf([w, s, e, n]) { return [[w, s], [e, s], [e, n], [w, n], [w, s]]; }
+  const EMPTY_FC = { type: 'FeatureCollection', features: [] };
+
+  function addAreaLayers() {
+    if (map.getSource('p3d-areas')) return;
+    map.addSource('p3d-areas', { type: 'geojson', data: EMPTY_FC });
+    map.addSource('p3d-mask', { type: 'geojson', data: EMPTY_FC });
+    map.addLayer({ id: 'p3d-mask', type: 'fill', source: 'p3d-mask', paint: { 'fill-color': '#0b0d12', 'fill-opacity': 0.5 } });
+    map.addLayer({ id: 'p3d-area-fill', type: 'fill', source: 'p3d-areas',
+      paint: { 'fill-color': ['case', ['get', 'sel'], '#4f8cff', '#ffd166'], 'fill-opacity': ['case', ['get', 'sel'], 0.06, 0.14] } });
+    map.addLayer({ id: 'p3d-area-line', type: 'line', source: 'p3d-areas', layout: { 'line-join': 'round' },
+      paint: { 'line-color': ['case', ['get', 'sel'], '#4f8cff', '#ffd166'], 'line-width': 3 } });
+    // A thin glowing wall around each square, so its edge stays visible between 3D buildings.
+    map.addSource('p3d-walls', { type: 'geojson', data: EMPTY_FC });
+    map.addLayer({ id: 'p3d-area-wall', type: 'fill-extrusion', source: 'p3d-walls',
+      paint: { 'fill-extrusion-color': ['case', ['get', 'sel'], '#4f8cff', '#ffd166'], 'fill-extrusion-height': ['get', 'h'],
+        'fill-extrusion-base': 0, 'fill-extrusion-opacity': 0.75 } });
+    updateAreas();
+  }
+
+  function updateAreas() {
+    const src = map.getSource('p3d-areas');
+    const mask = map.getSource('p3d-mask');
+    if (!src || !mask) return;
+    const areas = state.places.filter((p) => p.bbox);
+    src.setData({ type: 'FeatureCollection', features: areas.map((p) => ({
+      type: 'Feature', properties: { sel: p.id === state.selected }, geometry: { type: 'Polygon', coordinates: [ringOf(p.bbox)] },
+    })) });
+    const walls = map.getSource('p3d-walls');
+    if (walls) walls.setData({ type: 'FeatureCollection', features: areas.map((p) => {
+      const [w, so, e, n] = p.bbox;
+      const m = areaMeters(p.bbox);
+      const t = clamp(m.diag * 0.004, 2, 60);                    // wall thickness in metres
+      const dLat = t / 110574, dLng = t / (111320 * Math.cos(p.lat * Math.PI / 180));
+      return { type: 'Feature', properties: { sel: p.id === state.selected, h: clamp(m.diag * 0.04, 25, 600) },
+        geometry: { type: 'Polygon', coordinates: [ringOf([w - dLng, so - dLat, e + dLng, n + dLat]), ringOf(p.bbox).reverse()] } };
+    }) });
+    // Dim everything outside the selected area so the square stands out.
+    const sel = areas.find((p) => p.id === state.selected);
+    mask.setData(sel ? { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon',
+      coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]], ringOf(sel.bbox).reverse()] } }] } : EMPTY_FC);
+  }
+
+  async function reverseName(lat, lng, zoom) {
+    const wait = lastGeo + 1100 - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastGeo = Date.now();
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=${zoom}&lat=${lat}&lon=${lng}`,
+        { headers: { 'Accept-Language': navigator.language || 'en' } });
+      const j = await r.json();
+      if (!j || j.error) return null;
+      const a = j.address || {};
+      const road = a.road ? (a.house_number ? `${a.house_number} ${a.road}` : a.road) : null;
+      const name = (zoom >= 16 ? j.name || road : null) || a.neighbourhood || a.suburb || a.quarter || a.village || a.town || a.city || j.name || null;
+      return { name, address: j.display_name };
+    } catch (e) { return null; }
+  }
+
+  async function pickAt(lat, lng, height) {
+    const p = { id: nextId++, name: null, address: null, lat, lng, camera: {}, bbox: null };
+    if (height != null && Number.isFinite(height)) p.ground = height;
+    state.places.push(p);
+    save(); renderList(); syncMarkers();
+    select(p.id, { fly: false });
+    status('Pin added. Looking up its name…');
+    const r = await reverseName(lat, lng, 18);
+    if (r && r.name && state.places.includes(p)) { p.name = r.name; p.address = r.address; save(); renderList(); syncMarkers(); }
+    status(`Added “${label(p)}”. Click again to add more, or press Esc to stop.`, 'ok');
+  }
+
+  async function addArea(bbox) {
+    const p = { id: nextId++, name: `Area ${state.places.filter((x) => x.bbox).length + 1}`, address: null,
+      lat: (bbox[1] + bbox[3]) / 2, lng: (bbox[0] + bbox[2]) / 2, camera: {}, bbox };
+    state.places.push(p);
+    save(); renderList(); syncMarkers();
+    select(p.id);
+    status(`Area selected (${areaSize(bbox)}).`, 'ok');
+    const r = await reverseName(p.lat, p.lng, 14);
+    if (r && r.name && state.places.includes(p)) { p.name = `${r.name} area`; p.address = r.address; save(); renderList(); syncMarkers(); }
+    return p;
+  }
+
+  function setTool(tool) {
+    if (state.tool === tool) tool = null;
+    if (tool === 'area' && state.mode === 'photo') {
+      status('Selecting an area works in Free 3D. Switch to Free 3D, select it, then come back. The square shows up here too.', 'error');
+      return;
+    }
+    cancelDrag();
+    state.tool = tool;
+    document.querySelectorAll('#tools button').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
+    document.body.classList.toggle('tool-pick', tool === 'pick');
+    document.body.classList.toggle('tool-area', tool === 'area');
+    if (tool === 'area') {
+      map.dragPan.disable(); map.boxZoom.disable(); map.dragRotate.disable();
+      // Look straight down so the box drawn on screen is a true square on the ground.
+      map.easeTo({ pitch: 0, bearing: 0, duration: 700 });
+      status('Drag a box over the map to select an area. Hold Shift for an exact square. Press Esc to cancel.');
+    } else {
+      map.dragPan.enable(); map.boxZoom.enable(); map.dragRotate.enable();
+      status(tool === 'pick' ? 'Click anywhere on the map to drop a pin. Press Esc to stop.' : '');
+    }
+  }
+
+  map.on('click', (e) => {
+    if (state.tool === 'pick' && state.mode === 'free') pickAt(e.lngLat.lat, e.lngLat.lng);
+  });
+
+  // drag-to-select an area
+  const selbox = $('#selbox');
+  const cont = map.getCanvasContainer();
+  let drag = null;
+  function dragRect(shift) {
+    let dx = drag.x - drag.x0, dy = drag.y - drag.y0;
+    if (shift) { const sz = Math.max(Math.abs(dx), Math.abs(dy)); dx = Math.sign(dx || 1) * sz; dy = Math.sign(dy || 1) * sz; }
+    return [Math.min(drag.x0, drag.x0 + dx), Math.min(drag.y0, drag.y0 + dy), Math.max(drag.x0, drag.x0 + dx), Math.max(drag.y0, drag.y0 + dy)];
+  }
+  function rectToBbox([x0, y0, x1, y1]) {
+    const pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map((pt) => map.unproject(pt));
+    const lngs = pts.map((q) => q.lng), lats = pts.map((q) => q.lat);
+    return [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
+  }
+  function drawBox(shift) {
+    const r = dragRect(shift);
+    Object.assign(selbox.style, { left: r[0] + 'px', top: r[1] + 'px', width: (r[2] - r[0]) + 'px', height: (r[3] - r[1]) + 'px' });
+    selbox.firstElementChild.textContent = r[2] - r[0] > 40 ? areaSize(rectToBbox(r)) : '';
+  }
+  function cancelDrag() { drag = null; selbox.hidden = true; }
+  cont.addEventListener('pointerdown', (e) => {
+    if (state.tool !== 'area' || e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const b = cont.getBoundingClientRect();
+    drag = { x0: e.clientX - b.left, y0: e.clientY - b.top, x: e.clientX - b.left, y: e.clientY - b.top };
+    try { cont.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    selbox.hidden = false;
+    drawBox(e.shiftKey);
+  }, true);
+  cont.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const b = cont.getBoundingClientRect();
+    drag.x = clamp(e.clientX - b.left, 0, b.width); drag.y = clamp(e.clientY - b.top, 0, b.height);
+    drawBox(e.shiftKey);
+  }, true);
+  cont.addEventListener('pointerup', (e) => {
+    if (!drag) return;
+    const r = dragRect(e.shiftKey);
+    cancelDrag();
+    if (r[2] - r[0] < 12 || r[3] - r[1] < 12) { status('That box was too small. Drag a bigger one.', 'error'); return; }
+    const bbox = rectToBbox(r);
+    setTool(null);
+    addArea(bbox);
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && state.tool) setTool(null);
+  });
+
   // ================================================= mode-independent camera
   function flyTo(p) {
     stopOrbitDuringFlight();
@@ -511,6 +713,7 @@
 
   async function setMode(mode) {
     if (mode === 'photo') {
+      if (state.tool === 'area') setTool(null);
       $('#photoOpts').hidden = false; $('#freeOpts').hidden = true;
       if (!viewer && !$('#apiKey').value.trim()) {
         markSeg('#modeSeg', 'mode', 'photo');
@@ -607,6 +810,7 @@
   $('#exampleBtn').addEventListener('click', () => { $('#input').value = EXAMPLES; $('#addBtn').click(); });
   $('#fileInput').addEventListener('change', (e) => { importFiles([...e.target.files]); e.target.value = ''; });
 
+  document.querySelectorAll('#tools button').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
   $('#tourBtn').addEventListener('click', tour);
   $('#clearBtn').addEventListener('click', () => {
     if (state.places.length && !confirm('Remove all places?')) return;
@@ -667,13 +871,14 @@
   try { $('#apiKey').value = localStorage.getItem(KEY_KEY) || ''; } catch (e) { /* ignore */ }
   const initial = loadInitial();
   if (initial.length) {
-    initial.forEach((s) => state.places.push({ id: nextId++, name: s.name, lat: s.lat, lng: s.lng, camera: s.camera }));
+    initial.forEach((s) => state.places.push({ id: nextId++, name: s.name, lat: s.lat, lng: s.lng, camera: s.camera, bbox: s.bbox }));
     renderList();
-    map.once('load', () => { syncMarkers(); fitAll(); });
+    syncMarkers();
+    fitAll();
   } else {
     renderList();
   }
 
   // exposed for debugging / automation
-  window.places3d = { state, map, addText: (t) => addSpecs(P.parseText(t)), select, fitAll, setMode };
+  window.places3d = { state, map, addText: (t) => addSpecs(P.parseText(t)), select, fitAll, setMode, setTool, addArea, pickAt };
 })();
