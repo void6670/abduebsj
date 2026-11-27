@@ -11,7 +11,11 @@ python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
-Any static host works too (GitHub Pages, Netlify and so on).
+Any static host works too.
+
+### GitHub Pages
+
+`.github/workflows/pages.yml` tests and publishes the site on every push. To turn it on once: **Settings → Pages → Build and deployment → Source: GitHub Actions**, then re-run the workflow from the **Actions** tab. The site is served at `https://<owner>.github.io/<repo>/`.
 
 ## What it understands
 
