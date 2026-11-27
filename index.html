@@ -70,6 +70,11 @@
   <main id="stage">
     <div id="map"></div>
     <div id="globe" hidden></div>
+    <div id="tools" role="toolbar" aria-label="Map tools">
+      <button data-tool="pick" title="Click the map to add a place"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>Pick place</button>
+      <button data-tool="area" title="Drag a square on the map to select an area"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3 2.5"/></svg>Select area</button>
+    </div>
+    <div id="selbox" hidden><span></span></div>
     <div id="drop" hidden>Drop a places file</div>
     <button id="panelToggle" aria-label="Toggle panel">☰</button>
   </main>
