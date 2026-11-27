@@ -42,10 +42,11 @@ Short links (`maps.app.goo.gl/…`) can't be expanded from a browser because of 
 
 ## Two 3D modes
 
-**Free 3D** (the default, no key needed) uses
-[MapLibre GL](https://maplibre.org) with [OpenFreeMap](https://openfreemap.org) vector tiles and 3D buildings,
-[AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) for elevation, and optional Esri satellite imagery.
-Exaggerated terrain, a sky and atmosphere, and a streets/satellite switch are included.
+**Free 3D** (the default, no key needed) uses [MapLibre GL](https://maplibre.org). It has two looks:
+- **Realistic** (default): Esri satellite imagery draped over [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) elevation with hillshading. Ground, forest, water, snow and rock show their real colours. Buildings from [OpenFreeMap](https://openfreemap.org) are extruded with procedurally generated facade textures (brick, stone, plaster, concrete, sandstone, and glass for towers), coloured roofs and sun lighting. Main roads and street and place labels sit on top.
+- **Map**: the OpenFreeMap Liberty street map with the same textured buildings, hillshading and terrain.
+
+Terrain exaggeration, a sky and atmosphere, and the 3D buildings and terrain toggles work in both.
 
 **Photorealistic** uses Google's [Photorealistic 3D Tiles](https://developers.google.com/maps/documentation/tile/3d-tiles)
 (the same 3D mesh as Google Earth), rendered with [CesiumJS](https://cesium.com/platform/cesiumjs/).
